@@ -15,7 +15,7 @@ client.on('ready', (c) => {
 })
 
 client.on('messageCreate', (message) => {
-    console.log(message.content);
+    //console.log(message.content);
 });
 
 client.on('interactionCreate', (interaction) => {
@@ -23,9 +23,17 @@ client.on('interactionCreate', (interaction) => {
 
 
     if(interaction.commandName === 'test') {
-        interaction.reply('the test command is working!')
+        interaction.reply('the test command is working!');
+    }
+    if(interaction.commandName === 'ping') {
+        interaction.reply('pong!');
+    }
+    if(interaction.commandName === 'quiz') {
+        const link = interaction.options.get('playlist-link')
+        interaction.reply(link.value);
     }
 });
+
 client.login(
     process.env.TOKEN
 );
