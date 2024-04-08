@@ -2,6 +2,7 @@ require('dotenv').config();
 const { Client, IntentsBitField, EmbedBuilder } = require('discord.js');
 const { CommandHandler } = require('djs-commander');
 const path = require('path');
+const { Player } = require('discord-player');
 
 const client = new Client({
     intents : [
@@ -9,8 +10,12 @@ const client = new Client({
         IntentsBitField.Flags.GuildMembers,
         IntentsBitField.Flags.GuildMessages,
         IntentsBitField.Flags.MessageContent,
+        IntentsBitField.Flags.GuildVoiceStates,
     ]
 });
+
+const player = new Player(client);
+player.extractors.loadDefault(); //important line for player to work
 
 new CommandHandler({
     client, // this simplifies writing "client : client" since they have same name
@@ -52,3 +57,20 @@ client.on('interactionCreate', (interaction) => {
 client.login(
     process.env.TOKEN
 );
+
+
+
+player.events.on('playerError', (event) => {
+    console.log('PLAYER ERROR', event);
+})
+
+player.events.on('error', (event) => {
+    console.log('ERROR', event);
+})
+
+player.events.on('playerStart', (queue, track) => {
+    // we will later define queue.metadata object while creating the queue
+    //queue.metadata.channel.send(`Started playing **${track.title}**!`);
+    queue.metadata.channel.send(`Started playing song...`);
+});
+player.extractors.loadDefault((ext) => ext !== 'YouTubeExtractor' && ext !== 'SpotifyExtractor');

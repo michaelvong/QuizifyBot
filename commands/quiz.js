@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, ApplicationCommandOptionType, EmbedBuilder} = require('discord.js');
+const { QueryType, useMainPlayer } = require('discord-player');
 require('dotenv').config();
 
 module.exports = {
@@ -13,7 +14,7 @@ module.exports = {
             required : true,
         }
     ],
-    run: ({ interaction }) => {
+    run: ({ client, interaction }) => {
         let accessToken = "";
         //interaction.reply('Pong');
         const link = interaction.options.get('playlist-link').value; //stores user input into link
@@ -88,9 +89,15 @@ module.exports = {
             
         });*/
         
-        function populateSongs(accessToken){
-
+        //receives an array and shuffles the elements using Fisher Yates algorithm
+        function shuffleSongs(song_array){
+            for (let i = song_array.length-1; i > 0; i--){
+                let random_index = Math.floor(Math.random() * (i+1));
+                [song_array[i], song_array[random_index]] = [song_array[random_index], song_array[i]];
+            }
+            return song_array;
         }
+
         //if a playlist > 100 songs then next !null
         //if next ! null we need to loop get rest of songs and store them into song array
         //maybe its better to start backwards from the end of playlist so we have a definite number
@@ -110,7 +117,7 @@ module.exports = {
 
                 //playlist_objs is the obj returned from spotify api call 
                 //playlist_objs is an array of objs
-                Promise.all(promises).then(playlist_objs => {
+                Promise.all(promises).then(async playlist_objs => {
                     //console.log(r)
                     for(let k = 0; k < playlist_objs.length; k++) {
                         let iteration_size = playlist_objs[k].items.length; //holds the number of songs for the k iteration (1-100)
@@ -126,7 +133,34 @@ module.exports = {
                             array_songs.push(playlist_objs[k].items[p].track.name + "-" + artist_names);
                         }
                     }
-                    console.log(array_songs);
+                    //console.log(array_songs);
+                    array_songs = shuffleSongs(array_songs);
+                    //console.log(array_songs);
+
+                    //console.log(client);
+
+                    const player = useMainPlayer();
+                    const channel = interaction.member.voice.channel;
+
+                    
+                    
+                    //console.log(channel);
+                    
+                    let query = "robbery juice world";
+                    try {
+                        const { track } = await player.play(channel, query, {
+                            nodeOptions: {
+                                // nodeOptions are the options for guild node (aka your queue in simple word)
+                                metadata: interaction // we can access this metadata object using queue.metadata later on
+                            }
+                        });
+                
+                        return interaction.followUp(`**${track.title}** enqueued!`);
+                    } catch (e) {
+                        // let's return error if something failed
+                        return interaction.followUp(`Something went wrong: ${e}`);
+                    }
+                    
                 });
                 
             });
