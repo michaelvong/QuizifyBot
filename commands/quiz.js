@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, ApplicationCommandOptionType, EmbedBuilder} = require('discord.js');
-const { QueryType, useMainPlayer } = require('discord-player');
+const { QueryType, useMainPlayer , useQueue} = require('discord-player');
 require('dotenv').config();
+const mongoose = require('mongoose');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -127,40 +128,84 @@ module.exports = {
                             let artist_size = playlist_objs[k].items[p].track.artists.length;
                             //console.log(artist_size);
                             for(let m = 0; m < artist_size; m++){
-                                artist_names += playlist_objs[k].items[p].track.artists[m].name + " ";
+                                artist_names += playlist_objs[k].items[p].track.artists[m].name + ", ";
                                 //console.log(artist_names);
                             }
-                            array_songs.push(playlist_objs[k].items[p].track.name + "-" + artist_names);
+                            array_songs.push(playlist_objs[k].items[p].track.name + "--" + artist_names);
                         }
                     }
                     //console.log(array_songs);
-                    array_songs = shuffleSongs(array_songs);
+                    const shuffled_songs_array = shuffleSongs(array_songs);
                     //console.log(array_songs);
 
                     //console.log(client);
 
                     const player = useMainPlayer();
-                    const channel = interaction.member.voice.channel;
-
-                    
-                    
+                    const voice_channel = interaction.member.voice.channel;
+                    //const chat_channel = interaction.channelId;
+                    //console.log(chat_channel);
+                    //interaction.channel.send('Playing song...')
                     //console.log(channel);
-                    
-                    let query = "robbery juice world";
+
+                    let participants_array = []; //this will hold participants and their scores in this game
+                    const scoreboard_embed = new EmbedBuilder().setTitle('Scores')
+                    .setDescription('Example')
+                    .setColor(0x0099FF)
+                    ;
+
+                    let current_index = 0;
+                    let query = shuffled_songs_array[current_index];
+                    //console.log(query);
+                    let song_info = ""; //holds the track info returned from the player
+                    let song_title = query.split('--')[0]; //sets song answer to just the title without the artists
+                    let song_title_filtered = song_title.split('(')[0]; //removes the (feat. ) from titles if exists
+                    console.log(song_title_filtered);
                     try {
-                        const { track } = await player.play(channel, query, {
+                        const { track } = await player.play(voice_channel, query, {
                             nodeOptions: {
                                 // nodeOptions are the options for guild node (aka your queue in simple word)
                                 metadata: interaction // we can access this metadata object using queue.metadata later on
-                            }
+                                
+                            },
+                            leaveOnStop: false,
+                            leaveOnEnd: false,
                         });
-                
-                        return interaction.followUp(`**${track.title}** enqueued!`);
+                        song_info = '"' + track.title + '"' + ' by ' + track.author;
+                        //return interaction.channel.send("Playing song...");
                     } catch (e) {
                         // let's return error if something failed
                         return interaction.followUp(`Something went wrong: ${e}`);
                     }
                     
+                    let answered_flag = false;
+                    client.on('messageCreate', async (message) => {
+                        
+                        if(message.content.toUpperCase().trim() === song_title_filtered.toUpperCase().trim()){
+                            if(!answered_flag){
+                                const queue = useQueue(interaction.guildId);
+                                queue.node.setPaused(!queue.node.isPaused());
+                                message.reply('Correct! The song was : ' + song_info);
+                                answered_flag = true;
+                                //console.log(interaction.user);
+                                const { username, id } = interaction.user;
+                                
+                                message.channel.send({ embeds: [scoreboard_embed] });
+                                
+                                (async () => {
+                                    try {
+                                        await mongoose.connect(process.env.mongoURL);
+                                        console.log('conncted to db');
+                                    } catch (error) {
+                                        console.log(error);
+                                    }
+                                })();
+                            }
+                            
+                        }
+                    })
+
+                    
+
                 });
                 
             });
