@@ -2,8 +2,11 @@ const { SlashCommandBuilder, ApplicationCommandOptionType, EmbedBuilder} = requi
 const { QueryType, useMainPlayer , useQueue} = require('discord-player');
 require('dotenv').config();
 const mongoose = require('mongoose');
-
+const { givePoint } = require('../utils/givePoint');
+const { getHighScore } = require('../utils/getHighScore');
+const { joinVoiceChannel } = require('@discordjs/voice');
 module.exports = {
+    
     data: new SlashCommandBuilder()
     .setName('quiz')
     .setDescription('Starts a quiz game using a given spotify playlist link'),
@@ -15,11 +18,9 @@ module.exports = {
             required : true,
         }
     ],
-    run: ({ client, interaction }) => {
-        let accessToken = "";
-        //interaction.reply('Pong');
+    run: async ({ client, interaction }) => {
+        
         const link = interaction.options.get('playlist-link').value; //stores user input into link
-        //console.log(link);
         const startEmbed = new EmbedBuilder().setTitle('Starting game!')
         interaction.reply({embeds: [startEmbed]});
         
@@ -68,27 +69,8 @@ module.exports = {
             return await response.json();
         }
 
-        /* original working with 100 songs
-        getToken().then(response => {
-            getPlaylistInfo(response.access_token).then(resp => {
+    
 
-                //console.log(resp.items);
-                
-                let array_songs = []; //each element is a string that has song title + all artists
-                let playlist_size = resp.items.length;
-                console.log(playlist_size)
-                for(let i = 0; i < playlist_size; i++){
-                    let artist_names = "";
-                    let artist_size = resp.items[i].track.artists.length;
-                    for(let j = 0; j < artist_size; j++){
-                        artist_names += resp.items[i].track.artists[j].name + " ";
-                    }
-                    array_songs[i] = resp.items[i].track.name + " " + artist_names;
-                }
-                //console.log(array_songs);
-            });
-            
-        });*/
         
         //receives an array and shuffles the elements using Fisher Yates algorithm
         function shuffleSongs(song_array){
@@ -103,115 +85,97 @@ module.exports = {
         //if next ! null we need to loop get rest of songs and store them into song array
         //maybe its better to start backwards from the end of playlist so we have a definite number
         //maybe theres a way to execute all api calls at once and wait for promise all? if we need 6 iterations, we can call all 6 at once 
-        getToken().then(response => {
-            let accessToken = response.access_token;
-            getPlaylistInfo(accessToken).then(resp => {
-                let array_songs = [];
-                //console.log(resp.total);
-                const total_songs = resp.total; //total number of songs in playlist
-                const iterations = Math.ceil(total_songs/100); //this will be the number of iterations needed to get all songs
 
-                let promises = []; //holds the amount of api calls we need to execute to gather all songs from a playlist
-                for (let i = 0; i < iterations; i++){
-                    promises.push(getRestOfSongs(accessToken, i*100));
+        //use await over then? maybe thatll allow loop
+
+        const accessToken_obj = await getToken(); //returns json obj with access token
+        const accessToken = accessToken_obj.access_token; 
+        const playlist_info = await getPlaylistInfo(accessToken) 
+
+        //console.log(accessToken.access_token);
+        //console.log(playlist_info);
+
+        let array_songs = [];
+
+        const total_songs = playlist_info.total;
+        const iterations = Math.ceil(total_songs/100);
+
+        let promises = []; //holds the amount of api calls we need to execute to gather all songs from a playlist
+        for (let i = 0; i < iterations; i++){
+            promises.push(getRestOfSongs(accessToken, i*100));
+        }
+
+        const playlist_objs = await Promise.all(promises);
+
+        for(let k = 0; k < playlist_objs.length; k++) {
+            let iteration_size = playlist_objs[k].items.length; //holds the number of songs for the k iteration (1-100)
+            for(let p = 0; p < iteration_size; p++){
+                let artist_names = "";
+                let artist_size = playlist_objs[k].items[p].track.artists.length;
+                for(let m = 0; m < artist_size; m++){
+                    artist_names += playlist_objs[k].items[p].track.artists[m].name + ", ";
                 }
+                array_songs.push(playlist_objs[k].items[p].track.name + "--" + artist_names);
+            }
+        }
+        const shuffled_songs_array = shuffleSongs(array_songs);
+        //console.log(shuffled_songs_array) 
 
-                //playlist_objs is the obj returned from spotify api call 
-                //playlist_objs is an array of objs
-                Promise.all(promises).then(async playlist_objs => {
-                    //console.log(r)
-                    for(let k = 0; k < playlist_objs.length; k++) {
-                        let iteration_size = playlist_objs[k].items.length; //holds the number of songs for the k iteration (1-100)
-                        //console.log(k, playlist_objs[k].items)
-                        for(let p = 0; p < iteration_size; p++){
-                            let artist_names = "";
-                            let artist_size = playlist_objs[k].items[p].track.artists.length;
-                            //console.log(artist_size);
-                            for(let m = 0; m < artist_size; m++){
-                                artist_names += playlist_objs[k].items[p].track.artists[m].name + ", ";
-                                //console.log(artist_names);
-                            }
-                            array_songs.push(playlist_objs[k].items[p].track.name + "--" + artist_names);
-                        }
-                    }
-                    //console.log(array_songs);
-                    const shuffled_songs_array = shuffleSongs(array_songs);
-                    //console.log(array_songs);
+        const player = useMainPlayer();
+        const voice_channel = interaction.member.voice.channel;
+        
+        let game_active = true; //game active flag
+        let current_index = 0; //index of song
+        
 
-                    //console.log(client);
+        while(game_active){
+            let query = shuffled_songs_array[current_index];
+            let song_info = ""; //holds the track info returned from the player
+            let song_title = query.split('--')[0]; //sets song answer to just the title without the artists
+            let song_title_filtered = song_title.split('(')[0]; //removes the (feat. ) from titles if exists
+            console.log(song_title_filtered);
 
-                    const player = useMainPlayer();
-                    const voice_channel = interaction.member.voice.channel;
-                    //const chat_channel = interaction.channelId;
-                    //console.log(chat_channel);
-                    //interaction.channel.send('Playing song...')
-                    //console.log(channel);
-
-                    let participants_array = []; //this will hold participants and their scores in this game
-                    const scoreboard_embed = new EmbedBuilder().setTitle('Scores')
-                    .setDescription('Example')
-                    .setColor(0x0099FF)
-                    ;
-
-                    let current_index = 0;
-                    let query = shuffled_songs_array[current_index];
-                    //console.log(query);
-                    let song_info = ""; //holds the track info returned from the player
-                    let song_title = query.split('--')[0]; //sets song answer to just the title without the artists
-                    let song_title_filtered = song_title.split('(')[0]; //removes the (feat. ) from titles if exists
-                    console.log(song_title_filtered);
-                    try {
-                        const { track } = await player.play(voice_channel, query, {
-                            nodeOptions: {
-                                // nodeOptions are the options for guild node (aka your queue in simple word)
-                                metadata: interaction // we can access this metadata object using queue.metadata later on
-                                
-                            },
-                            leaveOnStop: false,
-                            leaveOnEnd: false,
-                        });
-                        song_info = '"' + track.title + '"' + ' by ' + track.author;
-                        //return interaction.channel.send("Playing song...");
-                    } catch (e) {
-                        // let's return error if something failed
-                        return interaction.followUp(`Something went wrong: ${e}`);
-                    }
-                    
-                    let answered_flag = false;
-                    client.on('messageCreate', async (message) => {
+            try {
+                if(useQueue(interaction.guildId)){
+                    let temp = useQueue(interaction.guildId);
+                    await temp.node.skip();
+                }
+                const { track } = await player.play(voice_channel, query, {
+                    nodeOptions: {
+                        // nodeOptions are the options for guild node (aka your queue in simple word)
+                        metadata: interaction // we can access this metadata object using queue.metadata later on
                         
-                        if(message.content.toUpperCase().trim() === song_title_filtered.toUpperCase().trim()){
-                            if(!answered_flag){
-                                const queue = useQueue(interaction.guildId);
-                                queue.node.setPaused(!queue.node.isPaused());
-                                message.reply('Correct! The song was : ' + song_info);
-                                answered_flag = true;
-                                //console.log(interaction.user);
-                                const { username, id } = interaction.user;
-                                
-                                message.channel.send({ embeds: [scoreboard_embed] });
-                                
-                                (async () => {
-                                    try {
-                                        await mongoose.connect(process.env.mongoURL);
-                                        console.log('conncted to db');
-                                    } catch (error) {
-                                        console.log(error);
-                                    }
-                                })();
-                            }
-                            
-                        }
-                    })
-
-                    
-
+                    },
                 });
                 
-            });
+                song_info = '"' + track.title + '"' + ' by ' + track.author;
+                //return interaction.channel.send("Playing song...");
+            } catch (e) {
+                // let's return error if something failed
+                return interaction.followUp(`Something went wrong: ${e}`);
+            }
             
-        });
- 
+            let answered_flag = false; //flag to check if correct song has been typed
 
+            const fil = msg => {
+                return msg.content.toUpperCase().trim() === song_title_filtered.toUpperCase().trim()
+            }
+            
+            let collected_answer = await interaction.channel.awaitMessages ({ filter : fil, max : 1});
+            let msg_info = collected_answer.first();
+            await givePoint(msg_info, client, true);
+            answered_flag = true;
+            const queue = useQueue(interaction.guildId);
+            //queue.node.skip();
+            queue.node.setPaused(!queue.node.isPaused()); //pauses the queue
+            collected_answer.first().reply('Correct! The song was : ' + song_info);
+            //let current_high_score = await getHighScore();
+            //console.log(await getHighScore()); //gives correct updated high score
+            let current_high_score = await getHighScore();
+            if (current_high_score >= 3){
+                game_active = false;
+            } 
+            current_index += 1;
+        }
     },
 };
