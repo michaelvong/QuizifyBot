@@ -3,8 +3,9 @@ const { QueryType, useMainPlayer , useQueue} = require('discord-player');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const { givePoint } = require('../utils/givePoint');
-const { getHighScore, getTopPlayer } = require('../utils/getTopPlayer');
+const { getTopPlayer } = require('../utils/getTopPlayer');
 const { resetScore } = require('../utils/resetScore');
+const { validateLink } = require('../utils/validateSpotifyLink');
 module.exports = {
     
     data: new SlashCommandBuilder()
@@ -19,14 +20,22 @@ module.exports = {
         }
     ],
     run: async ({ client, interaction }) => {
-        
+        if(!interaction.member.voice.channel){
+            return interaction.reply('You must be in a voice channel to use this command.');
+        }
         const link = interaction.options.get('playlist-link').value; //stores user input into link
         const startEmbed = new EmbedBuilder().setTitle('Starting game!')
         interaction.reply({embeds: [startEmbed]});
-        
+        interaction.guild.commands.set([]);
         //example playlist link : https://open.spotify.com/playlist/04ETACGQVjIH92ITiwC596?si=64ce9ea3ce834156
         //we need the part that is after playlist/ and before ? (04ETACGQVjIH92ITiwC596)
         
+
+        //console.log( await validateLink(link));
+        if(!await validateLink(link)){
+            interaction.channel.send('Invalid input. Please enter a spotify playlist link.');
+            return;
+        }
         let playlist_id = link.split('playlist/')[1];
         playlist_id = playlist_id.split('?')[0];
         //console.log(temp);
@@ -106,7 +115,6 @@ module.exports = {
         }
 
         const playlist_objs = await Promise.all(promises);
-
         for(let k = 0; k < playlist_objs.length; k++) {
             let iteration_size = playlist_objs[k].items.length; //holds the number of songs for the k iteration (1-100)
             for(let p = 0; p < iteration_size; p++){
@@ -118,17 +126,25 @@ module.exports = {
                 array_songs.push(playlist_objs[k].items[p].track.name + "--" + artist_names);
             }
         }
+        let game_active = true; //game active flag
+        await resetScore(interaction.guildId); //resets scores in db
+        //make sure playlist has more than 5 songs
+        if(array_songs.length < 5) {
+            if(array_songs.length === 0){
+                interaction.channel.send('Ending... No songs found. Please ensure the playlist is public and the link is valid.')
+            } else {
+                interaction.channel.send('Ending... Please choose a playlist with more than 5 songs');
+            }
+            return;
+        }
         const shuffled_songs_array = shuffleSongs(array_songs);
-        //console.log(shuffled_songs_array) 
 
         const player = useMainPlayer();
         const voice_channel = interaction.member.voice.channel;
         
-        let game_active = true; //game active fla
+        const playlist_size = shuffled_songs_array.length;
         let current_index = 0; //index of song
         
-        //intializing queue with the first song so that the queue is non empty when we start the game loop
-
         
         const queue = await player.nodes.create(interaction.guildId); //create a queue for this server
         //if vc isnt connected, connect to the vc that the interaction is in
@@ -137,6 +153,13 @@ module.exports = {
         }
         //console.log(queue);
         while(game_active){
+            //check if were at max index
+            if(current_index === playlist_size){
+                interaction.channel.send('No more songs left to play...Ending game!');
+                queue.delete();
+                //show score embed here
+                break;
+            }
             let query = shuffled_songs_array[current_index] + "audio";
             let song_info = ""; //holds the track info returned from the player
             let song_title = query.split('--')[0]; //sets song answer to just the title without the artists
@@ -155,33 +178,39 @@ module.exports = {
                 }
 
                 const song = result.tracks[0];
-                //console.log(song);
                 await queue.addTrack(song);
                 await queue.node.play();
-                //console.log(result.tracks[0]);
                 
                 song_info = query.replace("--", " by ").replace(", audio", "");
-                //console.log(query);
                 interaction.channel.send("Playing song...");
             } catch (e) {
-                // let's return error if something failed
 
                 return interaction.followUp(`Something went wrong: ${e}`);
             }
             
-            //let answered_flag = false; //flag to check if correct song has been typed
-
             const fil = msg => {
-                return msg.content.toUpperCase().trim() === song_title_filtered.toUpperCase().trim()
+                return msg.content.toUpperCase().trim() === song_title_filtered.toUpperCase().trim() || msg.content === ".q skip";
             }
-            
-            let collected_answer = await interaction.channel.awaitMessages ({ filter : fil, max : 1});
-            let msg_info = collected_answer.first();
-            await givePoint(msg_info, client, true);
-            //answered_flag = true;
-            queue.node.setPaused(!queue.node.isPaused()); //pauses the queue
-            collected_answer.first().reply('Correct! The song was : ' + song_info);
+            let answered_flag = false;
+            let collected_answer = await interaction.channel.awaitMessages ({ filter : fil, max : 1, time : 5000 }).catch((err) => {
+                console.log(err);
+            });
+  
+            if(collected_answer.size === 0) {
+                interaction.channel.send("No one answered correctly within 45 seconds. The song was : " + song_info);
+            } else {
+                let msg_info = collected_answer.first();
+                if(msg_info.content === ".q skip"){
+                    msg_info.reply("Skipping song...");
+                    queue.node.setPaused(!queue.node.isPaused()); //pauses the queue
+                } else {
+                    await givePoint(msg_info, client);
+                    queue.node.setPaused(!queue.node.isPaused()); //pauses the queue
+                    collected_answer.first().reply('Correct! The song was : ' + song_info);
+                }
+            }
 
+        
             let top_player = await getTopPlayer();
             if (top_player.score >= 3){
                 game_active = false;
@@ -192,6 +221,6 @@ module.exports = {
             current_index += 1;
             await new Promise(resolve => {setTimeout(resolve, 3000)}); //created a timer so that its not rapid fire song after song
         }
-        await resetScore(interaction.guildId); //resets scores in db when game over
+        
     },
 };
