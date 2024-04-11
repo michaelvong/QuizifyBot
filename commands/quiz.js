@@ -3,8 +3,8 @@ const { QueryType, useMainPlayer , useQueue} = require('discord-player');
 require('dotenv').config();
 const mongoose = require('mongoose');
 const { givePoint } = require('../utils/givePoint');
-const { getHighScore } = require('../utils/getHighScore');
-const { joinVoiceChannel } = require('@discordjs/voice');
+const { getHighScore, getTopPlayer } = require('../utils/getTopPlayer');
+const { resetScore } = require('../utils/resetScore');
 module.exports = {
     
     data: new SlashCommandBuilder()
@@ -124,38 +124,52 @@ module.exports = {
         const player = useMainPlayer();
         const voice_channel = interaction.member.voice.channel;
         
-        let game_active = true; //game active flag
+        let game_active = true; //game active fla
         let current_index = 0; //index of song
         
+        //intializing queue with the first song so that the queue is non empty when we start the game loop
 
+        
+        const queue = await player.nodes.create(interaction.guildId); //create a queue for this server
+        //if vc isnt connected, connect to the vc that the interaction is in
+        if(!queue.connection) {
+            await queue.connect(interaction.member.voice.channel);
+        }
+        //console.log(queue);
         while(game_active){
-            let query = shuffled_songs_array[current_index];
+            let query = shuffled_songs_array[current_index] + "audio";
             let song_info = ""; //holds the track info returned from the player
             let song_title = query.split('--')[0]; //sets song answer to just the title without the artists
             let song_title_filtered = song_title.split('(')[0]; //removes the (feat. ) from titles if exists
             console.log(song_title_filtered);
 
             try {
-                if(useQueue(interaction.guildId)){
-                    let temp = useQueue(interaction.guildId);
-                    await temp.node.skip();
+             
+                const result = await player.search(query, {
+                    requestedBy: interaction.user,
+                    searchEngine: QueryType.YOUTUBE_SEARCH
+                })
+
+                if(result.tracks.length === 0){
+                    return interaction.channel.send('Cannot find track');
                 }
-                const { track } = await player.play(voice_channel, query, {
-                    nodeOptions: {
-                        // nodeOptions are the options for guild node (aka your queue in simple word)
-                        metadata: interaction // we can access this metadata object using queue.metadata later on
-                        
-                    },
-                });
+
+                const song = result.tracks[0];
+                //console.log(song);
+                await queue.addTrack(song);
+                await queue.node.play();
+                //console.log(result.tracks[0]);
                 
-                song_info = '"' + track.title + '"' + ' by ' + track.author;
-                //return interaction.channel.send("Playing song...");
+                song_info = query.replace("--", " by ").replace(", audio", "");
+                //console.log(query);
+                interaction.channel.send("Playing song...");
             } catch (e) {
                 // let's return error if something failed
+
                 return interaction.followUp(`Something went wrong: ${e}`);
             }
             
-            let answered_flag = false; //flag to check if correct song has been typed
+            //let answered_flag = false; //flag to check if correct song has been typed
 
             const fil = msg => {
                 return msg.content.toUpperCase().trim() === song_title_filtered.toUpperCase().trim()
@@ -164,18 +178,20 @@ module.exports = {
             let collected_answer = await interaction.channel.awaitMessages ({ filter : fil, max : 1});
             let msg_info = collected_answer.first();
             await givePoint(msg_info, client, true);
-            answered_flag = true;
-            const queue = useQueue(interaction.guildId);
-            //queue.node.skip();
+            //answered_flag = true;
             queue.node.setPaused(!queue.node.isPaused()); //pauses the queue
             collected_answer.first().reply('Correct! The song was : ' + song_info);
-            //let current_high_score = await getHighScore();
-            //console.log(await getHighScore()); //gives correct updated high score
-            let current_high_score = await getHighScore();
-            if (current_high_score >= 3){
+
+            let top_player = await getTopPlayer();
+            if (top_player.score >= 3){
                 game_active = false;
+                queue.delete();
+                //temp congrats statement
+                interaction.channel.send(`<@${top_player.userId}> Congrats you win with 3 points!`);
             } 
             current_index += 1;
+            await new Promise(resolve => {setTimeout(resolve, 3000)}); //created a timer so that its not rapid fire song after song
         }
+        await resetScore(interaction.guildId); //resets scores in db when game over
     },
 };
