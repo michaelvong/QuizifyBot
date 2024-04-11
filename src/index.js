@@ -22,7 +22,8 @@ new CommandHandler({
     client, // this simplifies writing "client : client" since they have same name
     commandsPath : path.join(__dirname, '..', 'commands'),
     eventsPath : path.join(__dirname, '..', 'events'),
-    testServer : '1226291241906343936'
+    //testServer : '1226291241906343936'
+    //testServer : '901760795547951114'
 })
 const exampleEmbed = new EmbedBuilder().setTitle('ExampleEmbed')
 .setDescription('Example');

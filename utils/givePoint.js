@@ -13,23 +13,12 @@ const Score = require('../models/Score');
 //lets pass sol string and game on to this since this is ran everyttime a msg appears
 //only give point if message = solution?
 
-const givePoint =  async (message, client, game_on) => {
-    //console.log(solution, game_on)
-    //console.log(message);
-    
+const givePoint =  async (message, client) => {
+  
     //return if message isnt from server or if msg is from bot
-    if(!message.inGuild() || message.author.bot || !game_on){
+    if(!message.inGuild() || message.author.bot){
         return false;
     }
-    //let user_input_edited = message.content.toUpperCase().trim();
-    //console.log(message.content.toUpperCase().trim());
-    //console.log(solution + "efefefef");
-    //console.log(message.author.id, message.guild.id);
-
-    //if user input does not equal solution return
-    //if(user_input_edited !== solution){
-        //return false;
-    //}
 
     const query = {
         userId : message.author.id,
