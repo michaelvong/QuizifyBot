@@ -53,9 +53,5 @@ player.events.on('error', (event) => {
     console.log('ERROR', event);
 })
 
-player.events.on('playerStart', (queue, track) => {
-    // we will later define queue.metadata object while creating the queue
-    //queue.metadata.channel.send(`Started playing **${track.title}**!`);
-    queue.metadata.channel.send(`Started playing song...`);
-});
+
 player.extractors.loadDefault((ext) => ext !== 'YouTubeExtractor' && ext !== 'SpotifyExtractor');
