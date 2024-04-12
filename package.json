@@ -18,6 +18,7 @@
     "dotenv": "^16.4.5",
     "mongodb": "^6.5.0",
     "mongoose": "^8.3.1",
+    "natural": "^7.0.0",
     "play-dl": "^1.9.7"
   }
 }
