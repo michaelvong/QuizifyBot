@@ -6,6 +6,9 @@ const { givePoint } = require('../utils/givePoint');
 const { getTopPlayer } = require('../utils/getTopPlayer');
 const { resetScore } = require('../utils/resetScore');
 const { validateLink } = require('../utils/validateSpotifyLink');
+const { getSongArray } = require('../utils/getSongArray');
+const { getScoreEmbed } = require('../utils/getScoreEmbed');
+const natural = require('natural');
 module.exports = {
     
     data: new SlashCommandBuilder()
@@ -22,6 +25,10 @@ module.exports = {
     run: async ({ client, interaction }) => {
         if(!interaction.member.voice.channel){
             return interaction.reply('You must be in a voice channel to use this command.');
+        }
+
+        if(useQueue(interaction.guildId)){
+            return interaction.reply('A game is already playing. Please finish the existing game or use ".q end"');
         }
         const link = interaction.options.get('playlist-link').value; //stores user input into link
         const startEmbed = new EmbedBuilder().setTitle('Starting game!')
@@ -90,22 +97,9 @@ module.exports = {
             return song_array;
         }
 
-        //if a playlist > 100 songs then next !null
-        //if next ! null we need to loop get rest of songs and store them into song array
-        //maybe its better to start backwards from the end of playlist so we have a definite number
-        //maybe theres a way to execute all api calls at once and wait for promise all? if we need 6 iterations, we can call all 6 at once 
-
-        //use await over then? maybe thatll allow loop
-
         const accessToken_obj = await getToken(); //returns json obj with access token
         const accessToken = accessToken_obj.access_token; 
         const playlist_info = await getPlaylistInfo(accessToken) 
-
-        //console.log(accessToken.access_token);
-        //console.log(playlist_info);
-
-        let array_songs = [];
-
         const total_songs = playlist_info.total;
         const iterations = Math.ceil(total_songs/100);
 
@@ -115,17 +109,8 @@ module.exports = {
         }
 
         const playlist_objs = await Promise.all(promises);
-        for(let k = 0; k < playlist_objs.length; k++) {
-            let iteration_size = playlist_objs[k].items.length; //holds the number of songs for the k iteration (1-100)
-            for(let p = 0; p < iteration_size; p++){
-                let artist_names = "";
-                let artist_size = playlist_objs[k].items[p].track.artists.length;
-                for(let m = 0; m < artist_size; m++){
-                    artist_names += playlist_objs[k].items[p].track.artists[m].name + ", ";
-                }
-                array_songs.push(playlist_objs[k].items[p].track.name + "--" + artist_names);
-            }
-        }
+        const array_songs = getSongArray(playlist_objs);
+
         let game_active = true; //game active flag
         await resetScore(interaction.guildId); //resets scores in db
         //make sure playlist has more than 5 songs
@@ -147,24 +132,32 @@ module.exports = {
         
         
         const queue = await player.nodes.create(interaction.guildId); //create a queue for this server
+        
         //if vc isnt connected, connect to the vc that the interaction is in
         if(!queue.connection) {
             await queue.connect(interaction.member.voice.channel);
         }
-        //console.log(queue);
+
         while(game_active){
             //check if were at max index
             if(current_index === playlist_size){
                 interaction.channel.send('No more songs left to play...Ending game!');
                 queue.delete();
-                //show score embed here
+                let top_player = await getTopPlayer(interaction.guildId);
+                const scoreEmbed = await getScoreEmbed(interaction.guildId, client);
+                interaction.channel.send({embeds: [scoreEmbed]});
+                interaction.channel.send(`<@${top_player.userId}> Congrats you win!`);
                 break;
             }
             let query = shuffled_songs_array[current_index] + "audio";
             let song_info = ""; //holds the track info returned from the player
             let song_title = query.split('--')[0]; //sets song answer to just the title without the artists
             let song_title_filtered = song_title.split('(')[0]; //removes the (feat. ) from titles if exists
-            console.log(song_title_filtered);
+            
+            //some remixed songs have the " -" which hinders similarity score from user input
+            //ex: "Worlds Away - Nikademis Remix" -> want to remove is so it would be as similar as it can to user input
+            let song_title_filtered_for_string_match = song_title_filtered.replace(" -", ""); 
+            console.log(song_title_filtered_for_string_match);
 
             try {
              
@@ -188,35 +181,50 @@ module.exports = {
                 return interaction.followUp(`Something went wrong: ${e}`);
             }
             
+            const game_commands = new Set([".Q END", ".Q SKIP"]); //holds set of possible commands while the game is playing
+
+
+            //filter for messages received after song plays
             const fil = msg => {
-                return msg.content.toUpperCase().trim() === song_title_filtered.toUpperCase().trim() || msg.content === ".q skip";
+                //console.log(msg);
+                //console.log('DISTANCE: ', msg.content , natural.JaroWinklerDistance(msg.content.toUpperCase().trim(), song_title_filtered_for_string_match.toUpperCase().trim()));
+                const similarity_score = natural.JaroWinklerDistance(msg.content.toUpperCase().trim(), song_title_filtered_for_string_match.toUpperCase().trim());
+                const rec_score = 0.91; //score that i found to be decently accurate after trialing with song remixes
+                return similarity_score > rec_score || game_commands.has(msg.content.toUpperCase().trim());
             }
-            let answered_flag = false;
-            let collected_answer = await interaction.channel.awaitMessages ({ filter : fil, max : 1, time : 5000 }).catch((err) => {
+
+            let collected_answer = await interaction.channel.awaitMessages ({ filter : fil, max : 1, time : 45000 }).catch((err) => {
                 console.log(err);
             });
   
             if(collected_answer.size === 0) {
                 interaction.channel.send("No one answered correctly within 45 seconds. The song was : " + song_info);
+
             } else {
                 let msg_info = collected_answer.first();
                 if(msg_info.content === ".q skip"){
                     msg_info.reply("Skipping song...");
                     queue.node.setPaused(!queue.node.isPaused()); //pauses the queue
-                } else {
+                } else if (msg_info.content === ".q end"){
+                    queue.delete();
+                    return msg_info.reply("Ending game!");
+                }
+                else {
                     await givePoint(msg_info, client);
                     queue.node.setPaused(!queue.node.isPaused()); //pauses the queue
                     collected_answer.first().reply('Correct! The song was : ' + song_info);
+                    const scoreEmbed = await getScoreEmbed(interaction.guildId, client);
+                    interaction.channel.send({embeds: [scoreEmbed]});
                 }
             }
 
         
-            let top_player = await getTopPlayer();
-            if (top_player.score >= 3){
+            let top_player = await getTopPlayer(interaction.guildId);
+            if (top_player.score >= 5){
                 game_active = false;
                 queue.delete();
                 //temp congrats statement
-                interaction.channel.send(`<@${top_player.userId}> Congrats you win with 3 points!`);
+                interaction.channel.send(`<@${top_player.userId}> Congrats you win with 5 points!`);
             } 
             current_index += 1;
             await new Promise(resolve => {setTimeout(resolve, 3000)}); //created a timer so that its not rapid fire song after song
