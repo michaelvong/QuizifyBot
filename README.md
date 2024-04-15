@@ -11,6 +11,7 @@ To Run:
 'node src/index.js' will run the main script and turn the bot on
 
 Examples:
+
 ![image](https://github.com/michaelvong/QuizifyBot/assets/72327548/b04bd1d1-0cb8-43d7-9a66-b6097cff2bf0)
 ![image](https://github.com/michaelvong/QuizifyBot/assets/72327548/50e94c8c-df96-45e1-8d1b-70cd94b4ab6b)
 
