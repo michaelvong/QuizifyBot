@@ -31,9 +31,12 @@ module.exports = {
             return interaction.reply('A game is already playing. Please finish the existing game or use ".q end"');
         }
         const link = interaction.options.get('playlist-link').value; //stores user input into link
+        const game_commands = new Set([".Q END", ".Q SKIP"]); //holds set of possible commands while the game is playing
         const startEmbed = new EmbedBuilder().setTitle('Starting game!')
+        .setDescription('Type the correct song title in the chat!')
+        .addFields({name : 'Commands (Use while song is playing)', value : Array.from(game_commands).map(ele => ele.toLowerCase()).join('\n')})
         interaction.reply({embeds: [startEmbed]});
-        interaction.guild.commands.set([]);
+        //interaction.guild.commands.set([]);
         //example playlist link : https://open.spotify.com/playlist/04ETACGQVjIH92ITiwC596?si=64ce9ea3ce834156
         //we need the part that is after playlist/ and before ? (04ETACGQVjIH92ITiwC596)
         
@@ -181,7 +184,7 @@ module.exports = {
                 return interaction.followUp(`Something went wrong: ${e}`);
             }
             
-            const game_commands = new Set([".Q END", ".Q SKIP"]); //holds set of possible commands while the game is playing
+            
 
 
             //filter for messages received after song plays
@@ -193,17 +196,17 @@ module.exports = {
                 return similarity_score > rec_score || game_commands.has(msg.content.toUpperCase().trim());
             }
 
-            let collected_answer = await interaction.channel.awaitMessages ({ filter : fil, max : 1, time : 45000 }).catch((err) => {
+            let collected_answer = await interaction.channel.awaitMessages ({ filter : fil, max : 1, time : 60000 }).catch((err) => {
                 console.log(err);
             });
   
             if(collected_answer.size === 0) {
-                interaction.channel.send("No one answered correctly within 45 seconds. The song was : " + song_info);
+                interaction.channel.send("No one answered correctly within a minute. The song was : " + song_info);
 
             } else {
                 let msg_info = collected_answer.first();
                 if(msg_info.content === ".q skip"){
-                    msg_info.reply("Skipping song...");
+                    msg_info.reply("Skipping song... The song was : " + song_info);
                     queue.node.setPaused(!queue.node.isPaused()); //pauses the queue
                 } else if (msg_info.content === ".q end"){
                     queue.delete();
