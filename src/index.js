@@ -23,7 +23,7 @@ new CommandHandler({
     commandsPath : path.join(__dirname, '..', 'commands'),
     eventsPath : path.join(__dirname, '..', 'events'),
     //testServer : '1226291241906343936'
-})
+});
 
 
 (async () => {
@@ -41,11 +41,11 @@ new CommandHandler({
 
 player.events.on('playerError', (event) => {
     console.log('PLAYER ERROR', event);
-})
+});
 
 player.events.on('error', (event) => {
     console.log('ERROR', event);
-})
+});
 
 
 player.extractors.loadDefault((ext) => ext !== 'YouTubeExtractor' && ext !== 'SpotifyExtractor');
