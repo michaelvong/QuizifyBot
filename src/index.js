@@ -25,12 +25,6 @@ new CommandHandler({
     //testServer : '1226291241906343936'
     //testServer : '901760795547951114'
 })
-const exampleEmbed = new EmbedBuilder().setTitle('ExampleEmbed')
-.setDescription('Example');
-
-
-
-  //https://open.spotify.com/playlist/04ETACGQVjIH92ITiwC596?si=6ac7a49f42d54e81
 
 
 (async () => {
