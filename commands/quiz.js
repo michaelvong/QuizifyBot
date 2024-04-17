@@ -134,7 +134,7 @@ module.exports = {
         let current_index = 0; //index of song
         
         
-        const queue = await player.nodes.create(interaction.guildId); //create a queue for this server
+        const queue = await player.nodes.create(interaction.guildId, {leaveOnEmpty: true, leaveOnEmptyCooldown: 30000, leaveOnStop : true, leaveOnStopCooldown : 30000}); //create a queue for this server
         
         //if vc isnt connected, connect to the vc that the interaction is in
         if(!queue.connection) {
@@ -163,7 +163,7 @@ module.exports = {
             console.log(song_title_filtered_for_string_match);
 
             try {
-             
+
                 const result = await player.search(query, {
                     requestedBy: interaction.user,
                     searchEngine: QueryType.YOUTUBE_SEARCH
@@ -176,12 +176,15 @@ module.exports = {
                 const song = result.tracks[0];
                 await queue.addTrack(song);
                 await queue.node.play();
-                
                 song_info = query.replace("--", " by ").replace(", audio", "");
                 interaction.channel.send("Playing song...");
             } catch (e) {
-
-                return interaction.followUp(`Something went wrong: ${e}`);
+                if(!queue.connection){
+                    return interaction.channel.send('No voice channel found... game ending');
+                } else {
+                    return interaction.followUp(`Something went wrong: ${e}`);
+                }
+                
             }
             
             
