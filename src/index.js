@@ -23,7 +23,7 @@ new CommandHandler({
     commandsPath : path.join(__dirname, '..', 'commands'),
     eventsPath : path.join(__dirname, '..', 'events'),
     //testServer : '1226291241906343936'
-})
+});
 
 
 (async () => {
